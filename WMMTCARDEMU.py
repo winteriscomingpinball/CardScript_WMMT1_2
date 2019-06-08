@@ -43,6 +43,8 @@ import binascii
 import serial
 import os
 
+import os 
+dir_path = os.path.dirname(os.path.realpath(__file__))
 
 try:
     clock = time.perf_counter
@@ -95,7 +97,7 @@ def ValidCommand(CommandString):
     if CommandString == "80": return 1
     return 0
     
-def CardTranslationWMMT(ChihiroString,CardFileName):
+def CardTranslationWMMT(ChihiroString,CardFileName, directory):
     CARDString = ChihiroString[ChihiroString.find("02 4E 53 00 00 00 30 31 30")+27: ChihiroString.find("02 4E 53 00 00 00 30 31 30") +27 + 207]
     CardCRC = 0
     CARDString = "4B 33 31 30 30 " + CARDString + "03"
@@ -117,20 +119,20 @@ def CardTranslationWMMT(ChihiroString,CardFileName):
     CardBytes = b""
     CardBytes = bytearray(CardValueList)
 
-    with open("cardFiles/"+CardFileName, "wb") as out_file:
+    with open(directory+CardFileName, "wb") as out_file:
         out_file.write(CardBytes)
     print ("Saved Card Data to " + CardFileName)
     
-    with open("cardFiles/"+CardFileName, "rb") as in_file:
+    with open(directory+CardFileName, "rb") as in_file:
         CardBytes = in_file.read()
     print ("Read in Card Data from " + CardFileName)
     
     return CardBytes
 
-def ReadCardFile(CardFileName):
+def ReadCardFile(CardFileName, directory):
     CardBytes = b""
     try:
-        with open("cardFiles/"+CardFileName, "rb") as in_file:
+        with open(directory+CardFileName, "rb") as in_file:
             CardBytes = in_file.read()
         print ("Read in Card Data from " + CardFileName)
         
@@ -141,7 +143,7 @@ def ReadCardFile(CardFileName):
             print (CardFileName + " appears to contain data.  This card data will be loaded when a game is started.")
             HaveCard=1
     except:
-        with open("cardFiles/"+CardFileName, "wb") as out_file:
+        with open(directory+CardFileName, "wb") as out_file:
             out_file.write(CardBytes)
         print (CardFileName + " not found.  Created " + CardFileName + ". You will have to select to create a new card in the game.")
         HaveCard=0
@@ -150,7 +152,7 @@ def ReadCardFile(CardFileName):
 
 
 def getCardFileName():
-    with open("currentCardFileName.txt", "r") as in_file:
+    with open(dir_path+"/currentCardFileName.txt", "r") as in_file:
         CardFileName = in_file.read()
     if CardFileName:
         CardFileNamePopulated = True
@@ -162,20 +164,25 @@ def getCardFileName():
     return CardFileName, CardFileNamePopulated
 
 def blankCardFileName():
-    with open("currentCardFileName.txt", "wb") as out_file:
+    with open(dir_path+"/currentCardFileName.txt", "wb") as out_file:
         out_file.write(b"")
         print ("Blanked out card file name")
 
-def deleteDefaultCard():
+def deleteDefaultCard(directory):
     try:
-        os.remove("cardFiles/"+"default.car")
+        os.remove(directory+"default.car")
         print("Deleted default.car dummy file")
     except:
         print("Could not delete default.car dummy file")
         pass
+
+def writeStatus(status):
+    with open(dir_path+"/ramdisk/status.txt", "w") as out_file:
+        out_file.write(status)
         
 
 def main():
+    writeStatus("Script started")
     CardBytes = b""
     ReadInput = ""
     CurrentCommand = ""
@@ -187,17 +194,19 @@ def main():
 
     readyForNewCard = True
 
-    deleteDefaultCard()
+    
     
     parser = argparse.ArgumentParser()
     #parser.add_argument('-f', '--cardfile', help='Name of card file to load. Example: -f CardHexFile')
     parser.add_argument('-p', '--comport', type=port_def, metavar='COMPORT', help="The serial device. Example: -t COM1")
     parser.add_argument('-a', '--alias', metavar='ALIAS', help='Alias for port. Example: -a Chihiro')
+    parser.add_argument('-d', '--directory', help='directory for card files. Example: /cardFiles')
+    
 
     configArgs = ""
     #args = parser.parse_args()
     
-    with open("config.ini", "r") as in_file:
+    with open(dir_path+"/config.ini", "r") as in_file:
         configArgs = str(in_file.read())
         print (configArgs)
         configArgs = configArgs.replace(" ", "")
@@ -211,7 +220,11 @@ def main():
     if not args.comport:
         parser.error('Please specify a serial port! Example: -cp COM1')
         sys.exit(0)
-        
+    if not args.directory:
+        parser.error('Please specify a directory! Example: /cardFiles')
+        sys.exit(0)
+
+    deleteDefaultCard(args.directory)
 ##    if not args.cardfile:
 ##        parser.error('Please specify a Card file name!  Example: -f CARDFILE.HEX')
 ##        sys.exit(0)
@@ -222,7 +235,7 @@ def main():
 
     (CardFileName, CardFileNamePopulated) = getCardFileName()
     if CardFileName:
-        (CardBytes, HaveCard) =  ReadCardFile(CardFileName)
+        (CardBytes, HaveCard) =  ReadCardFile(CardFileName,args.directory)
     else:
         print("CardFileName is blank.")
 
@@ -265,7 +278,8 @@ def main():
                 if not CardFileName:
                     CardFileName = "default.car"
                     print("CardFileName is blank. Using default.car")
-                (CardBytes, HaveCard) =  ReadCardFile(CardFileName)
+                (CardBytes, HaveCard) =  ReadCardFile(CardFileName,args.directory)
+                writeStatus("Polling for card.  Current card name: " + CardFileName)
                         
             new_data = comport['ser'].read()
             if len(new_data) > 0:
@@ -291,6 +305,7 @@ def main():
                         CurrentCommand = CommandCode(ReadInput)
                         PriorCommand = ReadInput
                         print ("Command Code is: " + CurrentCommand + ": " +CommandLookup(CurrentCommand))
+                        writeStatus("Command Code is: " + CurrentCommand + ": " +CommandLookup(CurrentCommand))
                         if CurrentCommand == CARD_CLEAN_CARD:
                             CleanStep=0
 
@@ -379,7 +394,7 @@ def main():
                     if CurrentCommand == CARD_WRITE and "05" in ReadInput:
                         output =b"\x02\x06\x53\x31\x30\x30\x03\x67"
                         print ("Received new card data!")
-                        CardBytes= CardTranslationWMMT(PriorCommand,CardFileName)
+                        CardBytes= CardTranslationWMMT(PriorCommand,CardFileName,args.directory)
                         print (CardBytes)
                         print ("Reader Emulator: Sending: CARD_WRITE Command(53) Reply: 02 06 53 31 30 30 03 67")
                         comport['ser'].write(output)
@@ -401,7 +416,7 @@ def main():
                         HaveCard=0
                         CardFileNamePopulated = False
                         if CardFileName == "default.car":
-                            deleteDefaultCard()
+                            deleteDefaultCard(args.directory)
                         CardFileName = ""
                         blankCardFileName()
                         readyForNewCard = True
