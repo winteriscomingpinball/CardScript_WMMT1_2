@@ -1,1 +1,1 @@
-Polling for card.  Current card name: test.hex
+Script started

@@ -151,9 +151,13 @@ def ReadCardFile(CardFileName, directory):
     return CardBytes, HaveCard
 
 
-def getCardFileName():
-    with open(dir_path+"/currentCardFileName.txt", "r") as in_file:
-        CardFileName = in_file.read()
+def getCardFileName(instanceVal):
+    CardFileName=""
+    try:
+        with open(dir_path+"/ramdisk/currentCardFileName"+instanceVal+".txt", "r") as in_file:
+            CardFileName = in_file.read()
+    except:
+        print("currentCardFileName.txt does not exist.")
     if CardFileName:
         CardFileNamePopulated = True
     else:
@@ -163,8 +167,8 @@ def getCardFileName():
         
     return CardFileName, CardFileNamePopulated
 
-def blankCardFileName():
-    with open(dir_path+"/currentCardFileName.txt", "wb") as out_file:
+def blankCardFileName(instanceVal):
+    with open(dir_path+"/ramdisk/currentCardFileName"+instanceVal+".txt", "wb") as out_file:
         out_file.write(b"")
         print ("Blanked out card file name")
 
@@ -176,13 +180,19 @@ def deleteDefaultCard(directory):
         print("Could not delete default.car dummy file")
         pass
 
-def writeStatus(status):
-    with open(dir_path+"/ramdisk/status.txt", "w") as out_file:
+def writeStatus(status,instanceVal):
+    with open(dir_path+"/ramdisk/status"+instanceVal+".txt", "w") as out_file:
         out_file.write(status)
         
 
 def main():
-    writeStatus("Script started")
+    try:
+        instanceVal = str(sys.argv[1])
+    except:
+        instanceVal = ""
+    
+    
+    writeStatus("Script started",instanceVal)
     CardBytes = b""
     ReadInput = ""
     CurrentCommand = ""
@@ -191,6 +201,8 @@ def main():
     StepNum = 0
     CleanStep = 0
     CardFileNamePopulated = False
+
+    
 
     readyForNewCard = True
 
@@ -206,13 +218,12 @@ def main():
     configArgs = ""
     #args = parser.parse_args()
     
-    with open(dir_path+"/config.ini", "r") as in_file:
+    with open(dir_path+"/config"+instanceVal+".ini", "r") as in_file:
         configArgs = str(in_file.read())
         print (configArgs)
         configArgs = configArgs.replace(" ", "")
 
     args = parser.parse_args(configArgs.splitlines())
-
     print ("printing args")
     print (args)
     
@@ -224,7 +235,12 @@ def main():
         parser.error('Please specify a directory! Example: /cardFiles')
         sys.exit(0)
 
-    deleteDefaultCard(args.directory)
+    
+    deleteDefaultCard(dir_path+'/ramdisk')
+    cardDirectory = args.directory
+    deleteDefaultCard(cardDirectory)
+    
+    
 ##    if not args.cardfile:
 ##        parser.error('Please specify a Card file name!  Example: -f CARDFILE.HEX')
 ##        sys.exit(0)
@@ -233,9 +249,9 @@ def main():
 
     #CardFileName = args.cardfile
 
-    (CardFileName, CardFileNamePopulated) = getCardFileName()
+    (CardFileName, CardFileNamePopulated) = getCardFileName(instanceVal)
     if CardFileName:
-        (CardBytes, HaveCard) =  ReadCardFile(CardFileName,args.directory)
+        (CardBytes, HaveCard) =  ReadCardFile(CardFileName,cardDirectory)
     else:
         print("CardFileName is blank.")
 
@@ -274,12 +290,15 @@ def main():
     try:
         while True:
             if readyForNewCard:
-                (CardFileName, CardFileNamePopulated) = getCardFileName()
+                (CardFileName, CardFileNamePopulated) = getCardFileName(instanceVal)
                 if not CardFileName:
                     CardFileName = "default.car"
+                    cardDirectory = dir_path+'/ramdisk'
                     print("CardFileName is blank. Using default.car")
-                (CardBytes, HaveCard) =  ReadCardFile(CardFileName,args.directory)
-                writeStatus("Polling for card.  Current card name: " + CardFileName)
+                else:
+                    cardDirectory = args.directory
+                (CardBytes, HaveCard) =  ReadCardFile(CardFileName,cardDirectory)
+                writeStatus("Polling for card.  Current card name: " + CardFileName,instanceVal)
                         
             new_data = comport['ser'].read()
             if len(new_data) > 0:
@@ -305,7 +324,7 @@ def main():
                         CurrentCommand = CommandCode(ReadInput)
                         PriorCommand = ReadInput
                         print ("Command Code is: " + CurrentCommand + ": " +CommandLookup(CurrentCommand))
-                        writeStatus("Command Code is: " + CurrentCommand + ": " +CommandLookup(CurrentCommand))
+                        writeStatus("Command Code is: " + CurrentCommand + ": " +CommandLookup(CurrentCommand),instanceVal)
                         if CurrentCommand == CARD_CLEAN_CARD:
                             CleanStep=0
 
@@ -394,7 +413,7 @@ def main():
                     if CurrentCommand == CARD_WRITE and "05" in ReadInput:
                         output =b"\x02\x06\x53\x31\x30\x30\x03\x67"
                         print ("Received new card data!")
-                        CardBytes= CardTranslationWMMT(PriorCommand,CardFileName,args.directory)
+                        CardBytes= CardTranslationWMMT(PriorCommand,CardFileName,cardDirectory)
                         print (CardBytes)
                         print ("Reader Emulator: Sending: CARD_WRITE Command(53) Reply: 02 06 53 31 30 30 03 67")
                         comport['ser'].write(output)
@@ -416,9 +435,9 @@ def main():
                         HaveCard=0
                         CardFileNamePopulated = False
                         if CardFileName == "default.car":
-                            deleteDefaultCard(args.directory)
+                            deleteDefaultCard(cardDirectory)
                         CardFileName = ""
-                        blankCardFileName()
+                        blankCardFileName(instanceVal)
                         readyForNewCard = True
 
                     if HaveCard==0:
